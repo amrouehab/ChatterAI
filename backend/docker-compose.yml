@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  database:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: mssql_chatter
+    ports:
+      - "1433:1433"
+    environment:
+      SA_PASSWORD: "Amrou123!"  # Ensure a strong password
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql  # Mount schema file
+    restart: always
+
+  backend:
+    build: .
+    container_name: chatter_backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - database
+    environment:
+      DB_SERVER: "database"
+      DB_USER: "sa"
+      DB_PASSWORD: "Amrou123!"
+      DB_NAME: "ChatterAI"
+      JWT_SECRET_KEY: "4b9f2e56a47c2b8d8d1e7c09c3b2a142e69f07b394b1dc8cb3121a31e60b23a9"
+    restart: always
+
+volumes:
+  mssql_data:

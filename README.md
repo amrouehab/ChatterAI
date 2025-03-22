@@ -1,2 +1,0 @@
-# ChatterAI
-ChatterAI ALx Project

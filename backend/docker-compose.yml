@@ -7,27 +7,44 @@ services:
     ports:
       - "1433:1433"
     environment:
-      SA_PASSWORD: "Amrou123!"  # Ensure a strong password
+      SA_PASSWORD: "YourStrong!Passw0rd"
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
     volumes:
       - mssql_data:/var/opt/mssql
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql  # Mount schema file
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -Q "SELECT 1" -b -o /dev/null
+      interval: 10s
+      timeout: 10s
+      retries: 20  
+      start_period: 60s  
     restart: always
+  # Add an initialization container to run the schema
+  db-init:
+    image: mcr.microsoft.com/mssql-tools
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - ./schema.sql:/schema.sql
+    command: /opt/mssql-tools/bin/sqlcmd -S database -U sa -P "Amrou123!" -d master -i /schema.sql
+    restart: on-failure
 
   backend:
     build: .
     container_name: chatter_backend
     ports:
-      - "5000:5000"
+      - "3000:3000"  # Changed to match your app.py port
     depends_on:
-      - database
+      db-init:
+        condition: service_completed_successfully
     environment:
       DB_SERVER: "database"
       DB_USER: "sa"
       DB_PASSWORD: "Amrou123!"
       DB_NAME: "ChatterAI"
       JWT_SECRET_KEY: "4b9f2e56a47c2b8d8d1e7c09c3b2a142e69f07b394b1dc8cb3121a31e60b23a9"
+      GOOGLE_API_KEY: "AIzaSyAiLZIFlmBF3iJX_z6WG6bbX0581HzouLQ" 
     restart: always
 
 volumes:

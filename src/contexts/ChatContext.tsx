@@ -1,254 +1,157 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
-import { useAuth } from './AuthContext';
-import { toast } from '@/components/ui/use-toast';
-
-export interface Message {
-  id: string;
-  content: string;
-  role: 'user' | 'assistant';
-  timestamp: string;
-}
-
-export interface Conversation {
-  id: string;
-  title: string;
-  lastMessage: string;
-  timestamp: string;
-  messages: Message[];
-}
+import React, { createContext, useContext, useState } from "react";
+import { Conversation, Message } from "../types";
+import { ChatAPI as ChatAPI } from "../lib/api";
+import { useToast } from "../hooks/use-toast";
 
 interface ChatContextType {
   conversations: Conversation[];
   currentConversation: Conversation | null;
-  isLoading: boolean;
-  isTyping: boolean;
-  createConversation: () => Promise<void>;
-  selectConversation: (id: string) => void;
+  messages: Message[];
+  loading: boolean;
+  sendingMessage: boolean;
+  getConversations: () => Promise<void>;
+  createConversation: () => Promise<Conversation>;
+  selectConversation: (id: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
-  deleteConversation: (id: string) => Promise<void>;
 }
 
-const ChatContext = createContext<ChatContextType | null>(null);
+const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-export function useChat() {
-  const context = useContext(ChatContext);
-  if (!context) {
-    throw new Error('useChat must be used within a ChatProvider');
-  }
-  return context;
-}
-
-interface ChatProviderProps {
-  children: React.ReactNode;
-}
-
-export function ChatProvider({ children }: ChatProviderProps) {
-  const { isAuthenticated, token } = useAuth();
+export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const { toast } = useToast();
 
-  // Load conversations when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchConversations();
-    } else {
-      setConversations([]);
-      setCurrentConversation(null);
-    }
-  }, [isAuthenticated]);
-
-  const fetchConversations = async () => {
+  const getConversations = async () => {
+    setLoading(true);
     try {
-      setIsLoading(true);
-      // In a real app, we would fetch from the API
-      // For now, let's simulate a response with mock data
-      
-      // Normally: const response = await axios.get('/api/chat');
-      // Simulate API response
-      const mockConversations: Conversation[] = Array(5).fill(null).map((_, i) => ({
-        id: `conv-${i + 1}`,
-        title: i === 0 ? 'New Chat' : `Conversation ${i + 1}`,
-        lastMessage: i === 0 ? '' : `This is the last message in conversation ${i + 1}`,
-        timestamp: new Date(Date.now() - i * 3600000).toISOString(),
-        messages: i === 0 ? [] : [
-          {
-            id: `msg-${i}-1`,
-            content: `Hello! How can I help you today in conversation ${i + 1}?`,
-            role: 'assistant',
-            timestamp: new Date(Date.now() - i * 3600000 - 60000).toISOString()
-          },
-          {
-            id: `msg-${i}-2`,
-            content: `This is a sample message in conversation ${i + 1}`,
-            role: 'user',
-            timestamp: new Date(Date.now() - i * 3600000).toISOString()
-          }
-        ]
-      }));
-      
-      setConversations(mockConversations);
-      
-      // If we have conversations, set the first one as current
-      if (mockConversations.length > 0) {
-        setCurrentConversation(mockConversations[0]);
-      }
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
+      const conversationsData = await ChatAPI.getConversations();
+      setConversations(conversationsData);
+      return conversationsData;
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to load your conversations.",
+        description: error.message || "Failed to load conversations",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   const createConversation = async () => {
+    setLoading(true);
     try {
-      // Create a new empty conversation
-      const newConversation: Conversation = {
-        id: `conv-${Date.now()}`,
-        title: 'New Chat',
-        lastMessage: '',
-        timestamp: new Date().toISOString(),
-        messages: []
-      };
-      
-      setConversations([newConversation, ...conversations]);
+      if(messages.length ==0 && currentConversation!=null){
+        return currentConversation;
+      }
+      const newConversation = await ChatAPI.createConversation("New Conversation");
+      setConversations((prev) => [newConversation, ...prev]);
       setCurrentConversation(newConversation);
-    } catch (error) {
-      console.error('Error creating conversation:', error);
+      setMessages([]);
+      return newConversation;
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to create a new conversation.",
+        description: error.message || "Failed to create conversation",
         variant: "destructive",
       });
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
-  const selectConversation = (id: string) => {
-    const selected = conversations.find(conv => conv.id === id) || null;
-    setCurrentConversation(selected);
+  const selectConversation = async (id: string) => {
+    setLoading(true);
+    try {
+      const { conversation, messages: conversationMessages } = await ChatAPI.getConversation(id);
+      setCurrentConversation(conversation);
+      setMessages(conversationMessages);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load conversation",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const sendMessage = async (content: string) => {
     if (!currentConversation) {
-      await createConversation();
-    }
-    
-    try {
-      // Add user message to the current conversation
-      const userMessage: Message = {
-        id: `msg-${Date.now()}-user`,
-        content,
-        role: 'user',
-        timestamp: new Date().toISOString()
-      };
-      
-      // Update the current conversation with the new message
-      const updatedConversation = {
-        ...currentConversation!,
-        messages: [...currentConversation!.messages, userMessage],
-        lastMessage: content,
-        timestamp: userMessage.timestamp
-      };
-      
-      setCurrentConversation(updatedConversation);
-      
-      // Update the conversations list
-      setConversations(conversations.map(conv => 
-        conv.id === updatedConversation.id ? updatedConversation : conv
-      ));
-      
-      // Show typing indicator
-      setIsTyping(true);
-      
-      // In a real app, we'd send the message to the API
-      // const response = await axios.post('/api/chat', { message: content });
-      
-      // Simulate AI response after a delay
-      setTimeout(() => {
-        const aiMessage: Message = {
-          id: `msg-${Date.now()}-ai`,
-          content: `This is a simulated response to "${content}" from the AI.`,
-          role: 'assistant',
-          timestamp: new Date().toISOString()
-        };
-        
-        // Update with AI response
-        const conversationWithResponse = {
-          ...updatedConversation,
-          messages: [...updatedConversation.messages, aiMessage],
-          lastMessage: aiMessage.content,
-          title: updatedConversation.title === 'New Chat' 
-            ? content.substring(0, 30) + (content.length > 30 ? '...' : '') 
-            : updatedConversation.title,
-          timestamp: aiMessage.timestamp
-        };
-        
-        setCurrentConversation(conversationWithResponse);
-        
-        // Update the conversations list
-        setConversations(conversations.map(conv => 
-          conv.id === conversationWithResponse.id ? conversationWithResponse : conv
-        ));
-        
-        setIsTyping(false);
-      }, 1500);
-      
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setIsTyping(false);
-      toast({
-        title: "Message Error",
-        description: "Failed to send your message.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const deleteConversation = async (id: string) => {
-    try {
-      // In a real app, we would call the API to delete the conversation
-      // await axios.delete(`/api/chat/${id}`);
-      
-      const updatedConversations = conversations.filter(conv => conv.id !== id);
-      setConversations(updatedConversations);
-      
-      // If we deleted the current conversation, set a new current
-      if (currentConversation?.id === id) {
-        setCurrentConversation(updatedConversations.length > 0 ? updatedConversations[0] : null);
+      // Create a new conversation if none is selected
+      try {
+        const newConversation = await createConversation();
+        await sendMessageToConversation(newConversation.id, content);
+      } catch (error) {
+        console.error("Failed to create conversation and send message:", error);
       }
+      return;
+    }
+
+    await sendMessageToConversation(currentConversation.id, content);
+  };
+
+  const sendMessageToConversation = async (conversationId: string, content: string) => {
+    setSendingMessage(true);
+    try {
+      // Add user message to UI immediately
+      const userMessage: Message = {
+        id: "temp_" + Date.now(),
+        conversationId,
+        content,
+        role: "user",
+        createdAt: new Date().toISOString(),
+      };
       
+      setMessages((prev) => [...prev, userMessage]);
+      
+      // Send to API and get AI response
+      const assistantMessage = await ChatAPI.sendMessage(conversationId, content);
+      
+      // Add AI response to messages
+      setMessages((prev) => [...prev, assistantMessage]);
+      
+    } catch (error: any) {
       toast({
-        title: "Conversation Deleted",
-        description: "The conversation has been removed.",
-      });
-    } catch (error) {
-      console.error('Error deleting conversation:', error);
-      toast({
-        title: "Delete Error",
-        description: "Failed to delete the conversation.",
+        title: "Error",
+        description: error.message || "Failed to send message",
         variant: "destructive",
       });
+    } finally {
+      setSendingMessage(false);
     }
   };
 
-  const value = {
-    conversations,
-    currentConversation,
-    isLoading,
-    isTyping,
-    createConversation,
-    selectConversation,
-    sendMessage,
-    deleteConversation
-  };
+  return (
+    <ChatContext.Provider
+      value={{
+        conversations,
+        currentConversation,
+        messages,
+        loading,
+        sendingMessage,
+        getConversations,
+        createConversation,
+        selectConversation,
+        sendMessage,
+      }}
+    >
+      {children}
+    </ChatContext.Provider>
+  );
+};
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
-}
+export const useChat = () => {
+  const context = useContext(ChatContext);
+  if (context === undefined) {
+    throw new Error("useChat must be used within a ChatProvider");
+  }
+  return context;
+};

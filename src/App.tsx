@@ -3,37 +3,39 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
-import { ChatProvider } from "@/contexts/ChatContext";
-import Auth from "@/pages/Auth";
-import Chat from "@/pages/Chat";
-import NotFound from "@/pages/NotFound";
-
-// Mock API service for demo
-import MockApiSetup from "@/services/mockApi";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { ChatProvider } from "./contexts/ChatContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Login from "./pages/Login";
+import Chat from "./pages/Chat";
+import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
-
-// Initialize mock API service
-MockApiSetup();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <AuthProvider>
-        <ChatProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <AuthProvider>
+          <ChatProvider>
             <Routes>
-              <Route path="/" element={<Auth />} />
-              <Route path="/chat" element={<Chat />} />
+              <Route path="/" element={<Login />} />
+              <Route
+                path="/chat"
+                element={
+                  <ProtectedRoute>
+                    <Chat />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="*" element={<NotFound />} />
             </Routes>
-          </BrowserRouter>
-        </ChatProvider>
-      </AuthProvider>
+          </ChatProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
